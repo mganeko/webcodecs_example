@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+
+<body>
+  use Chrome 90, with "Experimental Web Platform features" flag enabled.<br />
+
+  <button id="start_video_button" onclick="startMedia()">Start Media</button>
+  <button id="stop_video_button" onclick="stopMedia()">Stop Media</button>
+  <br />
+  <video id="local_video" width="240px" height="180px" volume="0"></video>
+  <br />
+  <canvas id="decode_canvas" width="640px" height="480px" style="width:240px; height:180px"></canvas>
+</body>
+<script>
+  // https://blog.jxck.io/entries/2020-09-01/webcodecs-webtransport-chat.html
+  // https://wicg.github.io/web-codecs/
+
+  let localStream = null;
+  const localVideo = document.getElementById('local_video');
+  const decodeCanvas = document.getElementById('decode_canvas');
+  const canvasCtx = decodeCanvas.getContext('2d');
+  let audioCtx = null;
+
+
+
+
+  async function startMedia() {
+    const constrants = { video: { width: 640, height: 480 }, audio: true };
+    localStream = await navigator.mediaDevices.getUserMedia(constrants);
+    localVideo.srcObject = localStream;
+    await localVideo.play();
+    localVideo.volume = 0;
+
+    // --- video encoder / decoder ---
+    setupVideoEncoderDecoder(localStream, canvasCtx);
+
+    // --- audio encoder / decoder ---
+    if (!audioCtx) {
+      audioCtx = new AudioContext();
+    }
+    setupAudioEncoderDecoder(localStream, audioCtx);
+
+    /*---
+    // ---- audio ---
+    const [audioTrack] = localStream.getAudioTracks();
+
+    // --- decoder ---
+
+
+    // Encoder
+    const audioEncoder = new AudioEncoder({ // NOT YET
+      output: function (chunk) {
+        console.log('audio:', chunk);
+
+        // encoder で作った vp8 の chunk
+        //videoDecoder.decode(chunk);
+      },
+      error: function () {
+        console.error(arguments)
+      }
+    });
+
+    await audioEncoder.configure({
+      codec: 'opus',
+      sampleRate: '16000',
+      bitrate: '128000',
+      numberOfChannels: 1,
+    });
+
+    // const audioReader = new AudioTrackReader(audioTrack);
+    // audioTrack.start((audioFrame) => {
+    //   audioEncoder.encode(audioFrame);
+    //   console.log('audioFrame:', audioFrame);
+    // });
+    ----*/
+  }
+
+  function stopMedia() {
+    localVideo.pause();
+    localVideo.srcObject = null;
+    if (localStream) {
+      localStream.getTracks().forEach(track => {
+        track.stop();
+      });
+    }
+  }
+
+  //
+  // getUserMedia() --> mediaStream --> videoTrack
+  //  --> VideoTrackReader --> VideoFrame
+  //  --> VideoEncoder.encode() --> videoEncoder.output() callback --> chunk
+  //  --> VideoDecoder.decode() --> videoDecoder.output() callback --> VideoFrame
+  //  --> ImageBitmap --> canvas ctx.drawImage()
+  //
+  async function setupVideoEncoderDecoder(stream, ctx2d) {
+    // Decoder
+    const videoDecoder = new VideoDecoder({
+      output: async function (frame) {
+        //const imageBitmap = await frame.createImageBitmap(); // deplicated
+        const imageBitmap = await createImageBitmap(frame);
+
+        // canvas に描画
+        ctx2d.drawImage(imageBitmap, 0, 0);
+
+        imageBitmap.close();
+        frame.close();
+      },
+      error: function () {
+        console.error(arguments)
+      }
+    })
+    await videoDecoder.configure({ codec: 'vp8' })
+
+
+    // ---- encoder ----
+
+    // Encoder
+    const videoEncoder = new VideoEncoder({
+      output: function (chunk) {
+        if (chunk.type === "key") {
+          console.log(chunk);
+        }
+
+        // encoder で作った vp8 の chunk
+        videoDecoder.decode(chunk);
+      },
+      error: function () {
+        console.error(arguments)
+      }
+    });
+
+    await videoEncoder.configure({
+      codec: 'vp8',
+      width: 640,
+      height: 480,
+      framerate: 30,
+    });
+
+    // --- read VideoFrame from VideoTrack
+    const [videoTrack] = localStream.getVideoTracks();
+
+    // VideoTrackReader deplicated, use MediaStreamTrackProcessor
+
+    const videoReader = new VideoTrackReader(videoTrack);
+    let frameCount = 0;
+    videoReader.start((videoFrame) => {
+      frameCount++;
+      if (frameCount % 100 === 1) {
+        videoEncoder.encode(videoFrame, { keyFrame: true });
+      }
+      else {
+        videoEncoder.encode(videoFrame);
+      }
+    });
+  }
+
+  //
+  // getUserMedia() --> mediaStream --> audioTrack
+  //  --> MediaStreamTrackProcessor --> AudioFrame
+  //  --> AudioEncoder.encode() --> audioEncoder.output() callback --> chunk
+  //  --> AudioDecoder.decode() --> audioDecoder.output() callback --> audioFrame
+  //  --> audioBuffer 
+  //
+  async function setupAudioEncoderDecoder(stream, audioCtx) {
+    const audioSampleRate = audioCtx.sampleRate;
+    console.log('Audio sampleRate=', audioSampleRate);
+
+    let audioTime = 0;
+
+    // --- Decoder ---
+    const audioDecoder = new AudioDecoder({
+      output: async function (frame) {
+        //console.log('audioDecorder output:', frame);
+
+        // -- playback --
+        const source = audioCtx.createBufferSource();
+        source.buffer = frame.buffer;
+        source.connect(audioCtx.destination);
+        source.start(audioTime);
+        audioTime = audioTime + frame.buffer.duration;
+      },
+      error: function () {
+        console.error(arguments)
+      }
+    })
+    await audioDecoder.configure({
+      codec: 'opus',
+      numberOfChannels: 1,
+      sampleRate: audioSampleRate,
+      bitrate: '128000',
+    })
+
+    // ---- encoder ----
+
+    // Encoder
+    const audioEncoder = new AudioEncoder({
+      output: function (chunk) {
+        // encoder で作った opus の chunk
+        audioDecoder.decode(chunk);
+      },
+      error: function () {
+        console.error(arguments)
+      }
+    });
+
+    await audioEncoder.configure({
+      codec: 'opus',
+      sampleRate: audioSampleRate,
+      bitrate: '128000',
+      numberOfChannels: 1,
+    });
+
+
+    // --- read AudioFrame from audioTrack
+    const [audioTrack] = stream.getAudioTracks();
+
+    const processor = new MediaStreamTrackProcessor(audioTrack);
+    const writable = new WritableStream({
+      start() {
+        console.log('Audio Writable start');
+      },
+      async write(audioFrame) {
+        //console.log('audioEncoder encode:', audioFrame);
+        audioEncoder.encode(audioFrame);
+      },
+      // stop() {
+      //   console.log('Writable stop');
+      // },
+      close() {
+        console.log('Audio Writable close');
+      },
+      abort(reason) {
+        console.log('Audio Writable abort:', reason);
+      },
+    })
+
+    processor.readable
+      .pipeTo(writable);
+  }
+
+</script>
+
+</html>
