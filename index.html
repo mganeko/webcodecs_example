@@ -2,6 +2,7 @@
 <html>
 
 <body>
+  <h2>WebCocdecs example</h2>
   use Chrome 90, with "Experimental Web Platform features" flag enabled.<br />
   <input type="checkbox" id="use_enocde_decode" checked>use Encoder/Decoder</input>
   &nbsp;
@@ -74,74 +75,6 @@
     return checkbox.checked;
   }
 
-  //
-  // getUserMedia() --> mediaStream --> videoTrack
-  //  --> VideoTrackReader --> VideoFrame
-  //  --> VideoEncoder.encode() --> videoEncoder.output() callback --> chunk
-  //  --> VideoDecoder.decode() --> videoDecoder.output() callback --> VideoFrame
-  //  --> ImageBitmap --> canvas ctx.drawImage()
-  //
-  async function setupVideoEncoderDecoderWithVideoReader(stream, ctx2d) {
-    // Decoder
-    const videoDecoder = new VideoDecoder({
-      output: async function (frame) {
-        //const imageBitmap = await frame.createImageBitmap(); // deplicated
-        const imageBitmap = await createImageBitmap(frame);
-
-        // canvas に描画
-        ctx2d.drawImage(imageBitmap, 0, 0);
-
-        imageBitmap.close();
-        frame.close();
-      },
-      error: function () {
-        console.error(arguments)
-      }
-    })
-    await videoDecoder.configure({ codec: 'vp8' })
-
-
-    // ---- encoder ----
-
-    // Encoder
-    const videoEncoder = new VideoEncoder({
-      output: function (chunk) {
-        if (chunk.type === "key") {
-          console.log(chunk);
-        }
-
-        // encoder で作った vp8 の chunk
-        videoDecoder.decode(chunk);
-      },
-      error: function () {
-        console.error(arguments)
-      }
-    });
-
-    await videoEncoder.configure({
-      codec: 'vp8',
-      width: 640,
-      height: 480,
-      framerate: 30,
-    });
-
-    // --- read VideoFrame from VideoTrack
-    const [videoTrack] = localStream.getVideoTracks();
-
-    // VideoTrackReader deplicated, use MediaStreamTrackProcessor
-
-    const videoReader = new VideoTrackReader(videoTrack);
-    let frameCount = 0;
-    videoReader.start((videoFrame) => {
-      frameCount++;
-      if (frameCount % 100 === 1) {
-        videoEncoder.encode(videoFrame, { keyFrame: true });
-      }
-      else {
-        videoEncoder.encode(videoFrame);
-      }
-    });
-  }
 
   //
   // getUserMedia() --> mediaStream --> videoTrack
@@ -233,20 +166,6 @@
     // --- read VideoFrame from VideoTrack
     const [videoTrack] = localStream.getVideoTracks();
 
-    // VideoTrackReader deplicated, use MediaStreamTrackProcessor
-    /*
-    const videoReader = new VideoTrackReader(videoTrack);
-    let frameCount = 0;
-    videoReader.start((videoFrame) => {
-      frameCount++;
-      if (frameCount % 100 === 1) {
-        videoEncoder.encode(videoFrame, { keyFrame: true });
-      }
-      else {
-        videoEncoder.encode(videoFrame);
-      }
-    });
-    */
 
     let frameCount = 0;
     const processor = new MediaStreamTrackProcessor(videoTrack);
@@ -264,18 +183,6 @@
           videoEncoder.encode(videoFrame);
         }
         videoFrame.close();
-
-
-        /*--
-        // --- direct draw ---
-        const imageBitmap = await createImageBitmap(videoFrame);
-
-        // canvas に描画
-        ctx2d.drawImage(imageBitmap, 0, 0);
-
-        imageBitmap.close();
-        videoFrame.close();
-        --*/
       },
       // stop() {
       //   console.log('Writable stop');
@@ -403,15 +310,6 @@
         //console.log('audioEncoder encode:', audioFrame);
         audioEncoder.encode(audioFrame);
         audioFrame.close();
-
-        /*--
-        // --- direct playback --
-        const source = audioCtx.createBufferSource();
-        source.buffer = audioFrame.buffer;
-        source.connect(audioCtx.destination);
-        source.start(audioTime);
-        audioTime = audioTime + audioFrame.buffer.duration;
-        --*/
       },
       // stop() {
       //   console.log('Writable stop');
@@ -427,6 +325,79 @@
     processor.readable
       .pipeTo(writable);
   }
+
+
+  // ========= not used (deplicated) =======
+
+  //
+  // getUserMedia() --> mediaStream --> videoTrack
+  //  --> VideoTrackReader --> VideoFrame
+  //  --> VideoEncoder.encode() --> videoEncoder.output() callback --> chunk
+  //  --> VideoDecoder.decode() --> videoDecoder.output() callback --> VideoFrame
+  //  --> ImageBitmap --> canvas ctx.drawImage()
+  //
+  async function setupVideoEncoderDecoderWithVideoReader(stream, ctx2d) {
+    // Decoder
+    const videoDecoder = new VideoDecoder({
+      output: async function (frame) {
+        //const imageBitmap = await frame.createImageBitmap(); // deplicated
+        const imageBitmap = await createImageBitmap(frame);
+
+        // canvas に描画
+        ctx2d.drawImage(imageBitmap, 0, 0);
+
+        imageBitmap.close();
+        frame.close();
+      },
+      error: function () {
+        console.error(arguments)
+      }
+    })
+    await videoDecoder.configure({ codec: 'vp8' })
+
+
+    // ---- encoder ----
+
+    // Encoder
+    const videoEncoder = new VideoEncoder({
+      output: function (chunk) {
+        if (chunk.type === "key") {
+          console.log(chunk);
+        }
+
+        // encoder で作った vp8 の chunk
+        videoDecoder.decode(chunk);
+      },
+      error: function () {
+        console.error(arguments)
+      }
+    });
+
+    await videoEncoder.configure({
+      codec: 'vp8',
+      width: 640,
+      height: 480,
+      framerate: 30,
+    });
+
+    // --- read VideoFrame from VideoTrack
+    const [videoTrack] = localStream.getVideoTracks();
+
+    // VideoTrackReader deplicated, use MediaStreamTrackProcessor
+
+    const videoReader = new VideoTrackReader(videoTrack);
+    let frameCount = 0;
+    videoReader.start((videoFrame) => {
+      frameCount++;
+      if (frameCount % 100 === 1) {
+        videoEncoder.encode(videoFrame, { keyFrame: true });
+      }
+      else {
+        videoEncoder.encode(videoFrame);
+      }
+    });
+  }
+
 </script>
 
 </html>
