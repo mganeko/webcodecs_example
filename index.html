@@ -32,47 +32,15 @@
     localVideo.volume = 0;
 
     // --- video encoder / decoder ---
-    setupVideoEncoderDecoder(localStream, canvasCtx);
+    //setupVideoEncoderDecoder(localStream, canvasCtx);
+    setupVideoDirect(localStream, canvasCtx);
 
     // --- audio encoder / decoder ---
     if (!audioCtx) {
       audioCtx = new AudioContext();
     }
-    setupAudioEncoderDecoder(localStream, audioCtx);
-
-    /*---
-    // ---- audio ---
-    const [audioTrack] = localStream.getAudioTracks();
-
-    // --- decoder ---
-
-
-    // Encoder
-    const audioEncoder = new AudioEncoder({ // NOT YET
-      output: function (chunk) {
-        console.log('audio:', chunk);
-
-        // encoder で作った vp8 の chunk
-        //videoDecoder.decode(chunk);
-      },
-      error: function () {
-        console.error(arguments)
-      }
-    });
-
-    await audioEncoder.configure({
-      codec: 'opus',
-      sampleRate: '16000',
-      bitrate: '128000',
-      numberOfChannels: 1,
-    });
-
-    // const audioReader = new AudioTrackReader(audioTrack);
-    // audioTrack.start((audioFrame) => {
-    //   audioEncoder.encode(audioFrame);
-    //   console.log('audioFrame:', audioFrame);
-    // });
-    ----*/
+    //setupAudioEncoderDecoder(localStream, audioCtx);
+    setupAudioDirect(localStream, audioCtx);
   }
 
   function stopMedia() {
@@ -157,6 +125,42 @@
   //
   // getUserMedia() --> mediaStream --> videoTrack
   //  --> MediaStreamTrackProcessor --> VideoFrame
+  //  --> ImageBitmap --> canvas ctx.drawImage()
+  //
+  async function setupVideoDirect(stream, ctx2d) {
+    // --- read VideoFrame from VideoTrack
+    const [videoTrack] = localStream.getVideoTracks();
+
+    const processor = new MediaStreamTrackProcessor(videoTrack);
+    const writable = new WritableStream({
+      start() {
+        console.log('Video Writable start');
+      },
+      async write(videoFrame) {
+        // --- direct draw ---
+        const imageBitmap = await createImageBitmap(videoFrame);
+        ctx2d.drawImage(imageBitmap, 0, 0);
+        imageBitmap.close();
+        videoFrame.close();
+      },
+      // stop() {
+      //   console.log('Writable stop');
+      // },
+      close() {
+        console.log('Video Writable close');
+      },
+      abort(reason) {
+        console.log('Video Writable abort:', reason);
+      },
+    })
+
+    processor.readable
+      .pipeTo(writable);
+  }
+
+  //
+  // getUserMedia() --> mediaStream --> videoTrack
+  //  --> MediaStreamTrackProcessor --> VideoFrame
   //  --> VideoEncoder.encode() --> videoEncoder.output() callback --> chunk
   //  --> VideoDecoder.decode() --> videoDecoder.output() callback --> VideoFrame
   //  --> ImageBitmap --> canvas ctx.drawImage()
@@ -230,6 +234,7 @@
         console.log('Video Writable start');
       },
       async write(videoFrame) {
+        // -- encode / decode --
         frameCount++;
         if (frameCount % 100 === 1) {
           videoEncoder.encode(videoFrame, { keyFrame: true });
@@ -237,8 +242,19 @@
         else {
           videoEncoder.encode(videoFrame);
         }
-
         videoFrame.close();
+
+
+        /*--
+        // --- direct draw ---
+        const imageBitmap = await createImageBitmap(videoFrame);
+
+        // canvas に描画
+        ctx2d.drawImage(imageBitmap, 0, 0);
+
+        imageBitmap.close();
+        videoFrame.close();
+        --*/
       },
       // stop() {
       //   console.log('Writable stop');
@@ -258,9 +274,50 @@
   //
   // getUserMedia() --> mediaStream --> audioTrack
   //  --> MediaStreamTrackProcessor --> AudioFrame
+  //  --> audioBuffer --> WebAudio AudioBufferNode --> AudioContext.destination
+  //
+  async function setupAudioDirect(stream, audioCtx) {
+    const audioSampleRate = audioCtx.sampleRate;
+    console.log('Audio sampleRate=', audioSampleRate);
+    let audioTime = audioCtx.currentTime;
+
+    // --- read AudioFrame from audioTrack
+    const [audioTrack] = stream.getAudioTracks();
+
+    const processor = new MediaStreamTrackProcessor(audioTrack);
+    const writable = new WritableStream({
+      start() {
+        console.log('Audio Writable start');
+      },
+      async write(audioFrame) {
+        // --- direct playback --
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioFrame.buffer;
+        source.connect(audioCtx.destination);
+        source.start(audioTime);
+        audioTime = audioTime + audioFrame.buffer.duration;
+      },
+      // stop() {
+      //   console.log('Writable stop');
+      // },
+      close() {
+        console.log('Audio Writable close');
+      },
+      abort(reason) {
+        console.log('Audio Writable abort:', reason);
+      },
+    })
+
+    processor.readable
+      .pipeTo(writable);
+  }
+
+  //
+  // getUserMedia() --> mediaStream --> audioTrack
+  //  --> MediaStreamTrackProcessor --> AudioFrame
   //  --> AudioEncoder.encode() --> audioEncoder.output() callback --> chunk
   //  --> AudioDecoder.decode() --> audioDecoder.output() callback --> audioFrame
-  //  --> audioBuffer 
+  //  --> audioBuffer --> WebAudio AudioBufferNode --> AudioContext.destination
   //
   async function setupAudioEncoderDecoder(stream, audioCtx) {
     const audioSampleRate = audioCtx.sampleRate;
@@ -321,9 +378,19 @@
         console.log('Audio Writable start');
       },
       async write(audioFrame) {
+        // --- encode / decode ---
         //console.log('audioEncoder encode:', audioFrame);
         audioEncoder.encode(audioFrame);
         audioFrame.close();
+
+        /*--
+        // --- direct playback --
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioFrame.buffer;
+        source.connect(audioCtx.destination);
+        source.start(audioTime);
+        audioTime = audioTime + audioFrame.buffer.duration;
+        --*/
       },
       // stop() {
       //   console.log('Writable stop');
@@ -339,7 +406,6 @@
     processor.readable
       .pipeTo(writable);
   }
-
 </script>
 
 </html>
