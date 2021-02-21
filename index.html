@@ -3,6 +3,8 @@
 
 <body>
   use Chrome 90, with "Experimental Web Platform features" flag enabled.<br />
+  <input type="checkbox" id="use_enocde_decode" checked>use Encoder/Decoder</input>
+  &nbsp;
 
   <button id="start_video_button" onclick="startMedia()">Start Media</button>
   <button id="stop_video_button" onclick="stopMedia()">Stop Media</button>
@@ -12,17 +14,15 @@
   <canvas id="decode_canvas" width="640px" height="480px" style="width:240px; height:180px"></canvas>
 </body>
 <script>
-  // https://blog.jxck.io/entries/2020-09-01/webcodecs-webtransport-chat.html
-  // https://wicg.github.io/web-codecs/
+  // Refer
+  //  https://blog.jxck.io/entries/2020-09-01/webcodecs-webtransport-chat.html
+  //  https://wicg.github.io/web-codecs/
 
   let localStream = null;
   const localVideo = document.getElementById('local_video');
   const decodeCanvas = document.getElementById('decode_canvas');
   const canvasCtx = decodeCanvas.getContext('2d');
   let audioCtx = null;
-
-
-
 
   async function startMedia() {
     const constrants = { video: { width: 640, height: 480 }, audio: true };
@@ -31,16 +31,32 @@
     await localVideo.play();
     localVideo.volume = 0;
 
-    // --- video encoder / decoder ---
-    //setupVideoEncoderDecoder(localStream, canvasCtx);
-    setupVideoDirect(localStream, canvasCtx);
+    const useEncoderDecoder = useEncoderDecoderChecked();
 
-    // --- audio encoder / decoder ---
+    // --- video ---
+    if (useEncoderDecoder) {
+      console.log('draw canvas after encode/decode');
+      // --- video encoder / decoder ---
+      setupVideoEncoderDecoder(localStream, canvasCtx);
+    }
+    else {
+      console.log('draw canvas direct');
+      setupVideoDirect(localStream, canvasCtx);
+    }
+
+    // --- audio ---
     if (!audioCtx) {
       audioCtx = new AudioContext();
     }
-    //setupAudioEncoderDecoder(localStream, audioCtx);
-    setupAudioDirect(localStream, audioCtx);
+    if (useEncoderDecoder) {
+      console.log('playback audio after encode/decode');
+      // --- audio encoder / decoder ---
+      setupAudioEncoderDecoder(localStream, audioCtx);
+    }
+    else {
+      console.log('playback audio direct');
+      setupAudioDirect(localStream, audioCtx);
+    }
   }
 
   function stopMedia() {
@@ -51,6 +67,11 @@
         track.stop();
       });
     }
+  }
+
+  function useEncoderDecoderChecked() {
+    const checkbox = document.getElementById('use_enocde_decode');
+    return checkbox.checked;
   }
 
   //
