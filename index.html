@@ -92,7 +92,7 @@
   //  --> VideoDecoder.decode() --> videoDecoder.output() callback --> VideoFrame
   //  --> ImageBitmap --> canvas ctx.drawImage()
   //
-  async function setupVideoEncoderDecoder(stream, ctx2d) {
+  async function setupVideoEncoderDecoderWithVideoReader(stream, ctx2d) {
     // Decoder
     const videoDecoder = new VideoDecoder({
       output: async function (frame) {
@@ -155,6 +155,107 @@
   }
 
   //
+  // getUserMedia() --> mediaStream --> videoTrack
+  //  --> MediaStreamTrackProcessor --> VideoFrame
+  //  --> VideoEncoder.encode() --> videoEncoder.output() callback --> chunk
+  //  --> VideoDecoder.decode() --> videoDecoder.output() callback --> VideoFrame
+  //  --> ImageBitmap --> canvas ctx.drawImage()
+  //
+  async function setupVideoEncoderDecoder(stream, ctx2d) {
+    // Decoder
+    const videoDecoder = new VideoDecoder({
+      output: async function (frame) {
+        //const imageBitmap = await frame.createImageBitmap(); // deplicated
+        const imageBitmap = await createImageBitmap(frame);
+
+        // canvas に描画
+        ctx2d.drawImage(imageBitmap, 0, 0);
+
+        imageBitmap.close();
+        frame.close();
+      },
+      error: function () {
+        console.error(arguments)
+      }
+    })
+    await videoDecoder.configure({ codec: 'vp8' })
+
+
+    // ---- encoder ----
+
+    // Encoder
+    const videoEncoder = new VideoEncoder({
+      output: function (chunk) {
+        if (chunk.type === "key") {
+          console.log(chunk);
+        }
+
+        // encoder で作った vp8 の chunk
+        videoDecoder.decode(chunk);
+      },
+      error: function () {
+        console.error(arguments)
+      }
+    });
+
+    await videoEncoder.configure({
+      codec: 'vp8',
+      width: 640,
+      height: 480,
+      framerate: 30,
+    });
+
+    // --- read VideoFrame from VideoTrack
+    const [videoTrack] = localStream.getVideoTracks();
+
+    // VideoTrackReader deplicated, use MediaStreamTrackProcessor
+    /*
+    const videoReader = new VideoTrackReader(videoTrack);
+    let frameCount = 0;
+    videoReader.start((videoFrame) => {
+      frameCount++;
+      if (frameCount % 100 === 1) {
+        videoEncoder.encode(videoFrame, { keyFrame: true });
+      }
+      else {
+        videoEncoder.encode(videoFrame);
+      }
+    });
+    */
+
+    let frameCount = 0;
+    const processor = new MediaStreamTrackProcessor(videoTrack);
+    const writable = new WritableStream({
+      start() {
+        console.log('Video Writable start');
+      },
+      async write(videoFrame) {
+        frameCount++;
+        if (frameCount % 100 === 1) {
+          videoEncoder.encode(videoFrame, { keyFrame: true });
+        }
+        else {
+          videoEncoder.encode(videoFrame);
+        }
+
+        videoFrame.close();
+      },
+      // stop() {
+      //   console.log('Writable stop');
+      // },
+      close() {
+        console.log('Video Writable close');
+      },
+      abort(reason) {
+        console.log('Video Writable abort:', reason);
+      },
+    })
+
+    processor.readable
+      .pipeTo(writable);
+  }
+
+  //
   // getUserMedia() --> mediaStream --> audioTrack
   //  --> MediaStreamTrackProcessor --> AudioFrame
   //  --> AudioEncoder.encode() --> audioEncoder.output() callback --> chunk
@@ -165,7 +266,7 @@
     const audioSampleRate = audioCtx.sampleRate;
     console.log('Audio sampleRate=', audioSampleRate);
 
-    let audioTime = 0;
+    let audioTime = audioCtx.currentTime;
 
     // --- Decoder ---
     const audioDecoder = new AudioDecoder({
@@ -222,6 +323,7 @@
       async write(audioFrame) {
         //console.log('audioEncoder encode:', audioFrame);
         audioEncoder.encode(audioFrame);
+        audioFrame.close();
       },
       // stop() {
       //   console.log('Writable stop');
