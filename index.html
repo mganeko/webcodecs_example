@@ -161,7 +161,7 @@
   //
   async function setupVideoDirect(stream, ctx2d) {
     // --- read VideoFrame from VideoTrack
-    const [videoTrack] = localStream.getVideoTracks();
+    const [videoTrack] = stream.getVideoTracks();
 
     const processor = new MediaStreamTrackProcessor(videoTrack);
     const writable = new WritableStream({
@@ -197,7 +197,7 @@
   //
   async function setupVideoGenerator(stream) {
     // --- read VideoFrame from VideoTrack
-    const [videoTrack] = localStream.getVideoTracks();
+    const [videoTrack] = stream.getVideoTracks();
 
     const processor = new MediaStreamTrackProcessor(videoTrack);
     const generator = new MediaStreamTrackGenerator('video');
@@ -263,7 +263,7 @@
     });
 
     // --- read VideoFrame from VideoTrack
-    const [videoTrack] = localStream.getVideoTracks();
+    const [videoTrack] = stream.getVideoTracks();
 
 
     let frameCount = 0;
@@ -333,7 +333,7 @@
       abort(reason) {
         console.log('Audio Writable abort:', reason);
       },
-    })
+    });
 
     processor.readable
       .pipeTo(writable);
@@ -501,7 +501,7 @@
     });
 
     // --- read VideoFrame from VideoTrack
-    const [videoTrack] = localStream.getVideoTracks();
+    const [videoTrack] = stream.getVideoTracks();
 
     // VideoTrackReader deplicated, use MediaStreamTrackProcessor
 
