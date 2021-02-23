@@ -4,13 +4,23 @@
 <body>
   <h2>WebCocdecs example</h2>
   use Chrome 90, with "Experimental Web Platform features" flag enabled.<br />
+  <!-- 
   <input type="checkbox" id="use_enocde_decode" checked>use Encoder/Decoder</input>
   &nbsp;
+  -->
+
+  <input type="radio" name="process_type" value="direct" checked>Processor</input>
+  <input type="radio" name="process_type" value="generator">use Processor/Generator</input>
+  <input type="radio" name="process_type" value="encoder">use Encoder/Decoder</input>
+  <br />
 
   <button id="start_video_button" onclick="startMedia()">Start Media</button>
   <button id="stop_video_button" onclick="stopMedia()">Stop Media</button>
   <br />
   <video id="local_video" width="240px" height="180px" volume="0"></video>
+  <br />
+  <video id="generate_video" width="240px" height="180px" volume="0"></video>
+  <audio id="generate_audio" width="240px" controls="1"></audio>
   <br />
   <canvas id="decode_canvas" width="640px" height="480px" style="width:240px; height:180px"></canvas>
 </body>
@@ -18,22 +28,66 @@
   // Refer
   //  https://blog.jxck.io/entries/2020-09-01/webcodecs-webtransport-chat.html
   //  https://wicg.github.io/web-codecs/
+  //  https://w3c.github.io/mediacapture-insertable-streams/
+
+
 
   let localStream = null;
   const localVideo = document.getElementById('local_video');
   const decodeCanvas = document.getElementById('decode_canvas');
+  const generateVideo = document.getElementById('generate_video');
+  const generateAudio = document.getElementById('generate_audio');
   const canvasCtx = decodeCanvas.getContext('2d');
   let audioCtx = null;
 
   async function startMedia() {
+    // --- get user media --
     const constrants = { video: { width: 640, height: 480 }, audio: true };
     localStream = await navigator.mediaDevices.getUserMedia(constrants);
     localVideo.srcObject = localStream;
     await localVideo.play();
     localVideo.volume = 0;
 
-    const useEncoderDecoder = useEncoderDecoderChecked();
 
+    //const useEncoderDecoder = useEncoderDecoderChecked();
+    const processType = getProcessType();
+    console.log('processType=' + processType);
+    if (!audioCtx) {
+      audioCtx = new AudioContext();
+    }
+
+
+    switch (processType) {
+      case 'direct':
+        console.log('draw canvas direct');
+        setupVideoDirect(localStream, canvasCtx);
+
+        console.log('playback audio direct');
+        setupAudioDirect(localStream, audioCtx);
+        break;
+
+      case 'generator':
+        console.log('playback generated video');
+        setupVideoGenerator(localStream);
+
+        console.log('playback generated audio');
+        setupAudioGenerator(localStream);
+        break;
+
+      case 'encoder':
+        console.log('draw canvas after encode/decode');
+        setupVideoEncoderDecoder(localStream, canvasCtx);
+
+        console.log('playback audio after encode/decode');
+        setupAudioEncoderDecoder(localStream, audioCtx);
+        break;
+
+      default:
+        console.warn('BAD process type:', processType);
+    }
+
+
+    /*--
     // --- video ---
     if (useEncoderDecoder) {
       console.log('draw canvas after encode/decode');
@@ -41,8 +95,11 @@
       setupVideoEncoderDecoder(localStream, canvasCtx);
     }
     else {
-      console.log('draw canvas direct');
-      setupVideoDirect(localStream, canvasCtx);
+      // console.log('draw canvas direct');
+      // setupVideoDirect(localStream, canvasCtx);
+
+      console.log('playback generated video');
+      setupVideoGenerator(localStream);
     }
 
     // --- audio ---
@@ -55,14 +112,22 @@
       setupAudioEncoderDecoder(localStream, audioCtx);
     }
     else {
-      console.log('playback audio direct');
-      setupAudioDirect(localStream, audioCtx);
+      //console.log('playback audio direct');
+      //setupAudioDirect(localStream, audioCtx);
+
+      console.log('playback generated audio');
+      setupAudioGenerator(localStream);
     }
+    --*/
   }
 
   function stopMedia() {
     localVideo.pause();
     localVideo.srcObject = null;
+
+    generateAudio.pause();
+    generateAudio.srcObject = null;
+
     if (localStream) {
       localStream.getTracks().forEach(track => {
         track.stop();
@@ -73,6 +138,19 @@
   function useEncoderDecoderChecked() {
     const checkbox = document.getElementById('use_enocde_decode');
     return checkbox.checked;
+  }
+
+  function getProcessType() {
+    const elements = document.getElementsByName('process_type');
+
+    let selectedValue = '';
+    elements.forEach(element => {
+      if (element.checked) {
+        selectedValue = element.value;
+      }
+    });
+
+    return selectedValue;
   }
 
 
@@ -110,6 +188,27 @@
 
     processor.readable
       .pipeTo(writable);
+  }
+
+  //
+  // getUserMedia() --> mediaStream --> audioTrack
+  //  --> MediaStreamTrackProcessor --> VideoFrame
+  //  --> MediaStreamTrackGeneratore --> MediaStream --> audio.srcObject
+  //
+  async function setupVideoGenerator(stream) {
+    // --- read VideoFrame from VideoTrack
+    const [videoTrack] = localStream.getVideoTracks();
+
+    const processor = new MediaStreamTrackProcessor(videoTrack);
+    const generator = new MediaStreamTrackGenerator('video');
+
+    processor.readable
+      .pipeTo(generator.writable);
+
+    const generatedStream = new MediaStream();
+    generatedStream.addTrack(generator);
+    generateVideo.srcObject = generatedStream;
+    await generateVideo.play();
   }
 
   //
@@ -238,6 +337,27 @@
 
     processor.readable
       .pipeTo(writable);
+  }
+
+  //
+  // getUserMedia() --> mediaStream --> audioTrack
+  //  --> MediaStreamTrackProcessor --> AudioFrame
+  //  --> MediaStreamTrackGeneratore --> MediaStream --> audio.srcObject
+  //
+  async function setupAudioGenerator(stream) {
+    // --- read AudioFrame from audioTrack
+    const [audioTrack] = stream.getAudioTracks();
+
+    const processor = new MediaStreamTrackProcessor(audioTrack);
+    const generator = new MediaStreamTrackGenerator('audio');
+
+    processor.readable
+      .pipeTo(generator.writable);
+
+    const generatedStream = new MediaStream();
+    generatedStream.addTrack(generator);
+    generateAudio.srcObject = generatedStream;
+    await generateAudio.play();
   }
 
   //
