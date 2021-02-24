@@ -72,6 +72,7 @@
 
         console.log('playback generated audio');
         setupAudioGenerator(localStream);
+        //setupAudioGeneratorWithNoise(localStream);
         break;
 
       case 'encoder':
@@ -316,7 +317,7 @@
       start() {
         console.log('Audio Writable start');
       },
-      async write(audioFrame) {
+      write(audioFrame) {
         // --- direct playback --
         const source = audioCtx.createBufferSource();
         source.buffer = audioFrame.buffer;
@@ -354,6 +355,51 @@
     processor.readable
       .pipeTo(generator.writable);
 
+    const generatedStream = new MediaStream();
+    generatedStream.addTrack(generator);
+    generateAudio.srcObject = generatedStream;
+    await generateAudio.play();
+  }
+
+  //
+  // getUserMedia() --> mediaStream --> audioTrack
+  //  --> MediaStreamTrackProcessor --> AudioFrame
+  //  --> MediaStreamTrackGeneratore --> MediaStream --> audio.srcObject
+  //
+  async function setupAudioGeneratorWithNoise(stream) {
+    // --- read AudioFrame from audioTrack
+    const [audioTrack] = stream.getAudioTracks();
+
+    const processor = new MediaStreamTrackProcessor(audioTrack);
+    const generator = new MediaStreamTrackGenerator('audio');
+
+    // --- TransformStreamを準備 ---
+    const transformer = new TransformStream({
+      // --- 変換処理 ---
+      async transform(audioFrame, controller) {
+        // --- AudioFrameから音声サンプルを取得 (Float32Array) ---
+        const samples = audioFrame.buffer.getChannelData(0); // 1チャンネルと仮定
+
+        // --- 加工を行う ---
+        for (let i = 0; i < samples.length; i++) {
+          samples[i] = samples[i] + (Math.random() * 2 - 1) * 0.1; // ノイズを加える例
+        }
+
+        // --- 音声サンプルをAudioFrameに戻す --
+        audioFrame.buffer.copyToChannel(samples, 0); // 1チャンネルと仮定
+
+        // --- 次のストリームに渡す ---
+        controller.enqueue(audioFrame);
+      }
+    });
+
+    // MediaStreamTrackProcessor のストリームと
+    //   TransformStream、MediaStreamTrackGeneratorを接続する
+    processor.readable
+      .pipeThrough(transformer)
+      .pipeTo(generator.writable);
+
+    // --- この後再生する ---
     const generatedStream = new MediaStream();
     generatedStream.addTrack(generator);
     generateAudio.srcObject = generatedStream;
