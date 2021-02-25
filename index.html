@@ -17,19 +17,25 @@
   <button id="start_video_button" onclick="startMedia()">Start Media</button>
   <button id="stop_video_button" onclick="stopMedia()">Stop Media</button>
   <br />
-  <video id="local_video" width="240px" height="180px" volume="0"></video>
-  <br />
-  <video id="generate_video" width="240px" height="180px" volume="0"></video>
-  <audio id="generate_audio" width="240px" controls="1"></audio>
-  <br />
-  <canvas id="decode_canvas" width="640px" height="480px" style="width:240px; height:180px"></canvas>
+  <div>
+    <h4>Source Media</h4>
+    <video id="local_video" width="240px" height="180px" volume="0"></video>
+  </div>
+  <div id="div_video_audio_element">
+    <h4>playback with VideoElement/AudioElement</h4>
+    <video id="generate_video" width="240px" height="180px" volume="0"></video>
+    <audio id="generate_audio" width="240px" controls="1"></audio>
+  </div>
+  <div id="div_canvas">
+    <h4>playback with Canvas/WebAudio</h4>
+    <canvas id="decode_canvas" width="640px" height="480px" style="width:240px; height:180px"></canvas>
+  </div>
 </body>
 <script>
   // Refer
   //  https://blog.jxck.io/entries/2020-09-01/webcodecs-webtransport-chat.html
   //  https://wicg.github.io/web-codecs/
   //  https://w3c.github.io/mediacapture-insertable-streams/
-
 
 
   let localStream = null;
@@ -39,6 +45,9 @@
   const generateAudio = document.getElementById('generate_audio');
   const canvasCtx = decodeCanvas.getContext('2d');
   let audioCtx = null;
+
+  hideElement('div_video_audio_element');
+  hideElement('div_canvas');
 
   async function startMedia() {
     // --- get user media --
@@ -59,6 +68,9 @@
 
     switch (processType) {
       case 'direct':
+        hideElement('div_video_audio_element');
+        showElement('div_canvas');
+
         console.log('draw canvas direct');
         setupVideoDirect(localStream, canvasCtx);
 
@@ -67,6 +79,9 @@
         break;
 
       case 'generator':
+        showElement('div_video_audio_element');
+        hideElement('div_canvas');
+
         console.log('playback generated video');
         setupVideoGenerator(localStream);
 
@@ -76,6 +91,9 @@
         break;
 
       case 'encoder':
+        hideElement('div_video_audio_element');
+        showElement('div_canvas');
+
         console.log('draw canvas after encode/decode');
         setupVideoEncoderDecoder(localStream, canvasCtx);
 
@@ -86,40 +104,6 @@
       default:
         console.warn('BAD process type:', processType);
     }
-
-
-    /*--
-    // --- video ---
-    if (useEncoderDecoder) {
-      console.log('draw canvas after encode/decode');
-      // --- video encoder / decoder ---
-      setupVideoEncoderDecoder(localStream, canvasCtx);
-    }
-    else {
-      // console.log('draw canvas direct');
-      // setupVideoDirect(localStream, canvasCtx);
-
-      console.log('playback generated video');
-      setupVideoGenerator(localStream);
-    }
-
-    // --- audio ---
-    if (!audioCtx) {
-      audioCtx = new AudioContext();
-    }
-    if (useEncoderDecoder) {
-      console.log('playback audio after encode/decode');
-      // --- audio encoder / decoder ---
-      setupAudioEncoderDecoder(localStream, audioCtx);
-    }
-    else {
-      //console.log('playback audio direct');
-      //setupAudioDirect(localStream, audioCtx);
-
-      console.log('playback generated audio');
-      setupAudioGenerator(localStream);
-    }
-    --*/
   }
 
   function stopMedia() {
@@ -564,6 +548,25 @@
     });
   }
 
+
+  // --- UI control ----
+  function showElement(id) {
+    const element = document.getElementById(id);
+    if (!element) {
+      retrun;
+    }
+
+    element.style.display = 'block';
+  }
+
+  function hideElement(id) {
+    const element = document.getElementById(id);
+    if (!element) {
+      retrun;
+    }
+
+    element.style.display = 'none';
+  }
 </script>
 
 </html>
